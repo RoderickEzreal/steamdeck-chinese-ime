@@ -1,0 +1,31 @@
+#!/bin/sh
+# D-Bus 激活 org.fcitx.Fcitx5
+#
+# 为什么要自己写一个:之前这个 service 文件写的是 Exec=/usr/bin/fcitx5,
+# 而 /usr/bin/fcitx5 是上一轮修复手动 cp 进系统镜像的、**不属于任何 pacman 包**,
+# SteamOS A/B 更新后会被整块抹掉;而且它不带 --keep,一旦显示连接抖动就自杀,
+# 留下一堆僵尸实例互相抢总线名字 —— 这就是「修好几天一直修不好」的循环。
+#
+# 现在:
+#   * 这个文件放在 ~/.local/share/dbus-1/services/,优先级高于 flatpak 导出的
+#     那份(实测 dbus-broker 先命中 XDG_DATA_HOME),所以 flatpak 版不会再被拉起
+#   * 它只负责确保 systemd 那个守护进程把总线名字接管掉,不再自己 fork 一个
+
+name_owned() {
+    gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.GetNameOwner org.fcitx.Fcitx5 >/dev/null 2>&1
+}
+
+name_owned && exit 0
+
+systemctl --user start --no-block fcitx5.service 2>/dev/null || true
+
+i=0
+while [ "$i" -lt 40 ]; do
+    name_owned && exit 0
+    i=$((i + 1))
+    sleep 0.25
+done
+
+# systemd 兜不住,就自己顶一个(前台运行,持有总线名字)
+exec "$HOME/.local/bin/fcitx5" --keep

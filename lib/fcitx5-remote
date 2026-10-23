@@ -1,0 +1,6 @@
+#!/bin/sh
+# fcitx5-remote 包装器(切换输入法 / 查询状态)
+HOST="$HOME/.local/share/fcitx5-host"
+LD_LIBRARY_PATH="$HOST/lib:$HOST/lib/private${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
+exec "$HOST/bin/fcitx5-remote" "$@"

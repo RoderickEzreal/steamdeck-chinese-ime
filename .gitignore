@@ -1,0 +1,12 @@
+# 构建产物
+*.pkg.tar.zst
+stage/
+
+# 编辑器
+*.swp
+*~
+.idea/
+.vscode/
+
+# 系统垃圾
+.DS_Store

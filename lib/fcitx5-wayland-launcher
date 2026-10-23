@@ -1,0 +1,32 @@
+#!/bin/sh
+# Wayland 输入法启动器(KWin --inputmethod= 的目标)
+#
+# 原理:KWin 通过 --inputmethod=<desktop 文件> 启动本程序,它在 WAYLAND_SOCKET 上
+# 新建一个 Wayland 连接,把 zwp_text_input_v2/v3(text-input)交给 fcitx5 守护进程。
+# 原生 Wayland 应用(kate / konsole / Dolphin / Plasma 搜索框)全靠这条链路 ——
+# 没有它,这些应用**永远**打不出中文,跟 daemon 状态无关。
+#
+# 之前一直修不好的原因之一:KWin 配置里指向的 desktop 文件和 launcher 二进制
+# 压根不存在。现在全部放在 ~/.local/ 下(SteamOS A/B 更新不会动 /home)。
+
+HOST="$HOME/.local/share/fcitx5-host"
+LD_LIBRARY_PATH="$HOST/lib:$HOST/lib/private${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
+
+name_owned() {
+    gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.GetNameOwner org.fcitx.Fcitx5 >/dev/null 2>&1
+}
+
+# 守护进程没起来就先拉起来,否则 launcher 连不上,原生 Wayland 应用就没有输入法
+if ! name_owned; then
+    "$HOME/.local/bin/fcitx5-start" >/dev/null 2>&1 &
+    i=0
+    while [ "$i" -lt 40 ]; do
+        name_owned && break
+        i=$((i + 1))
+        sleep 0.25
+    done
+fi
+
+exec "$HOST/libexec/fcitx5-wayland-launcher" "$@"

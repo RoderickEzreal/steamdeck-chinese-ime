@@ -1,0 +1,62 @@
+#!/bin/sh
+# fcitx5 用户态安装自检 / 自愈
+#
+# 整套 fcitx5 都在 ~/.local/share/fcitx5-host/(/home 独立分区),
+# SteamOS A/B 更新不会碰它 —— 正常情况下这里永远只做检查。
+# 万一 ~/.local/share 被清理过,就从 SteamOS 官方 extra-3.8 源重新构建
+# (包缓存在 ~/.cache/pkgcache,离线也能装)。
+#
+# 用法:fcitx5-ensure-installed
+# 退出码:0 = 完整,1 = 无法修复,2 = 已自动修复
+
+set -u
+HOST="$HOME/.local/share/fcitx5-host"
+
+REQUIRED="
+bin/fcitx5
+bin/fcitx5-remote
+bin/fcitx5-config-qt
+libexec/fcitx5-wayland-launcher
+lib/libFcitx5Core.so.7
+lib/libFcitx5Utils.so.2
+lib/libFcitx5Config.so.6
+lib/libIMECore.so.0
+lib/libIMEPinyin.so.0
+lib/fcitx5/libpinyin.so
+lib/fcitx5/libcloudpinyin.so
+lib/fcitx5/libtable.so
+lib/fcitx5/libchttrans.so
+lib/fcitx5/libpinyinhelper.so
+lib/fcitx5/libfullwidth.so
+lib/fcitx5/libpunctuation.so
+lib/fcitx5/libwayland.so
+lib/fcitx5/libxcb.so
+lib/fcitx5/libxim.so
+lib/fcitx5/libwaylandim.so
+lib/gtk-3.0/3.0.0/immodules/im-fcitx5.so
+lib/qt6/plugins/platforminputcontexts/libfcitx5platforminputcontextplugin.so
+share/fcitx5/addon/pinyin.conf
+share/fcitx5/inputmethod/pinyin.conf
+share/fcitx5/default/zh_CN
+share/libime/cj.main.dict
+share/gtk-3.0/immodules.cache
+"
+
+missing=0
+for f in $REQUIRED; do
+    [ -e "$HOST/$f" ] || { echo "  缺失: $f"; missing=$((missing + 1)); }
+done
+
+if [ "$missing" = "0" ]; then
+    echo "✓ fcitx5 用户态安装完整 ($HOST)"
+    exit 0
+fi
+
+echo "[!] 缺失 $missing 个文件,正在从 SteamOS 官方源重新构建 ..."
+if "$HOME/.local/bin/fcitx5-build-host"; then
+    echo "✓ 已自动修复"
+    exit 2
+fi
+
+echo "[错误] 自动修复失败"
+exit 1

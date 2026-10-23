@@ -1,0 +1,21 @@
+#!/bin/sh
+# 启动 fcitx5 守护进程(autostart / D-Bus 激活都走这里)
+#
+# 两级策略:
+#   1) 交给 systemd 用户单元 fcitx5.service —— 有 Restart=always,崩了自动拉起
+#   2) systemd 用不了(比如 user manager 没起来)就直接前台跑一个
+#
+# 顺带把 Plasma 会话的环境同步进 systemd user manager —— 否则守护进程拿不到
+# WAYLAND_DISPLAY / DISPLAY,连不上 Wayland 和 X11,输入法和界面就断链。
+
+# --systemd 会同时写 D-Bus 激活环境与 systemd user manager 环境
+dbus-update-activation-environment --systemd \
+    WAYLAND_DISPLAY DISPLAY XDG_RUNTIME_DIR XDG_SESSION_TYPE XDG_CURRENT_DESKTOP \
+    XDG_SESSION_DESKTOP QT_IM_MODULE GTK_IM_MODULE XMODIFIERS SDL_IM_MODULE \
+    INPUT_METHOD QT_PLUGIN_PATH 2>/dev/null || true
+
+if systemctl --user start --no-block fcitx5.service 2>/dev/null; then
+    exit 0
+fi
+
+exec "$HOME/.local/bin/fcitx5" --replace --keep

@@ -1,0 +1,15 @@
+[Unit]
+Description=Ensure dconf named profile 'ibus' exists (without it all ibus config writes fail)
+# 必须在 ibus-gamescope.service(掌机模式的 IBus 守护进程)之前跑完:
+# 它要先把 profile 文件准备好,ibus-dconf 一启动就能找到。
+Before=ibus-gamescope.service
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/ensure-ibus-dconf-profile.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=gamescope-session.target

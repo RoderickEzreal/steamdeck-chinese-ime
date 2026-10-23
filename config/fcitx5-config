@@ -1,0 +1,103 @@
+# 全局段:fcitx5 只在文件顶部读取这两个键。
+# 之前它们被写在了 [Behavior] 段里,导致"强制加载中文 addon"完全没生效,
+# 6 个 OnDemand=True 的中文 addon 一个都没加载,分组里的 pinyin 被判为无效而移除。
+EnabledAddons=pinyin,cloudpinyin,chttrans,table,fullwidth,punctuation,pinyinhelper
+# ibusfrontend 让 fcitx5 抢占 org.freedesktop.IBus 这个总线名,而且是不允许被替换的方式
+# 拿到的 —— 真的 ibus-daemon(含 Valve 的 ibus-gamescope.service)抢不回来。
+# Steam 的屏幕键盘(OSK)是 IBus 客户端,靠 GetEnginesByNames/SetGlobalEngine 工作,
+# fcitx5 的这个 frontend 只实现了 CreateInputContext,于是 OSK 报
+# "Keyboard_IME_Not_available" -> 掌机模式彻底没有中文。
+# 关掉它不影响桌面模式:桌面走 KWin --inputmethod= 桥 + GTK/Qt/XIM,都不经过这个总线名。
+#
+# ⚠️ 这个键只是"配置"通道,**实测不生效**(2026-10-24 验证:daemon 仍然
+# "Loaded addon ibusfrontend")。真正生效的是命令行 --disable:
+#   ~/.config/systemd/user/fcitx5.service
+#     ExecStart=~/.local/bin/fcitx5 --replace --keep --disable=ibusfrontend
+# 判据:journal 里出现 "Override Disabled Addons: {ibusfrontend}"。
+# 这里保留这一行只是无害的冗余。
+DisabledAddons=ibusfrontend
+[Hotkey]
+# 反复按切换键时进行轮换
+EnumerateWithTriggerKeys=True
+# 向前切换输入法
+EnumerateForwardKeys=
+# 向后切换输入法
+EnumerateBackwardKeys=
+# 轮换输入法时跳过第一个输入法
+EnumerateSkipFirst=False
+# 触发修饰键快捷键的时限 (毫秒)
+ModifierOnlyKeyTimeout=250
+
+[Hotkey/TriggerKeys]
+0=Alt+Shift+Shift_L
+1=Zenkaku_Hankaku
+2=Hangul
+3=Control+space
+
+[Hotkey/AltTriggerKeys]
+0=Shift_L
+
+[Hotkey/EnumerateGroupForwardKeys]
+0=Super+space
+
+[Hotkey/EnumerateGroupBackwardKeys]
+0=Shift+Super+space
+
+[Hotkey/ActivateKeys]
+0=Hangul_Hanja
+
+[Hotkey/DeactivateKeys]
+0=Hangul_Romaja
+
+[Hotkey/PrevPage]
+0=Up
+
+[Hotkey/NextPage]
+0=Down
+
+[Hotkey/PrevCandidate]
+0=Shift+Tab
+
+[Hotkey/NextCandidate]
+0=Tab
+
+[Hotkey/TogglePreedit]
+0=Control+Alt+P
+
+[Behavior]
+# 默认状态为激活
+# True = 新窗口获得焦点时直接进入拼音,不用再按一次 Ctrl+Space。
+# False 时每个新聚焦的窗口都从 keyboard-us 开始,用户必须手动切一次,
+# 表现为"有时能打中文有时不能" —— 这是之前最迷惑人的症状之一。
+ActiveByDefault=True
+# 重新聚焦时重置状态
+resetStateWhenFocusIn=No
+# 共享输入状态
+ShareInputState=No
+# 在程序中显示预编辑文本
+PreeditEnabledByDefault=True
+# 切换输入法时显示输入法信息
+ShowInputMethodInformation=True
+# 在焦点更改时显示输入法信息
+showInputMethodInformationWhenFocusIn=False
+# 显示紧凑的输入法信息
+CompactInputMethodInformation=True
+# 显示第一个输入法的信息
+ShowFirstInputMethodInformation=True
+# 默认页大小
+DefaultPageSize=5
+# 覆盖 Xkb 选项
+OverrideXkbOption=False
+# 自定义 Xkb 选项
+CustomXkbOption=
+# Force Enabled Addons
+# Force Disabled Addons
+# Preload input method to be used by default
+PreloadInputMethod=True
+# 允许在密码框中使用输入法
+AllowInputMethodForPassword=False
+# 输入密码时显示预编辑文本
+ShowPreeditForPassword=False
+# 保存用户数据的时间间隔（以分钟为单位）
+AutoSavePeriod=30
+

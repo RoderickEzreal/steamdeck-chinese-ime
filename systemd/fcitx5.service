@@ -1,0 +1,52 @@
+[Unit]
+Description=fcitx5 Chinese input method
+Documentation=man:fcitx5(1)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# --replace: 已有实例时接管而不是直接退出(手动再跑一次 fcitx5 -d 会把正在用的
+#            实例顶掉,导致会话里的输入法突然失效)
+# --keep   : 主显示连接断开时不退出。之前 daemon 因为 Wayland 连接被抢走而
+#            "Connection removed" -> "Save before exiting" 直接自杀,
+#            而旧的 xdg-autostart 单元 Restart=no,没人拉它回来 ——
+#            这就是「修好几天一直修不好」的真正原因。
+# --disable=ibusfrontend : fcitx5 的 ibusfrontend 会用
+#            RequestNameFlag::DoNotQueue|ReplaceExisting 抢占 org.freedesktop.IBus
+#            这个总线名,真的 ibus-daemon(Valve 的 ibus-gamescope.service)抢不回来。
+#            而 Steam 的屏幕键盘(OSK)是 IBus 客户端,靠 GetEnginesByNames/SetGlobalEngine
+#            工作;fcitx5 的这个 frontend 只实现 CreateInputContext,于是 OSK 拿到空的
+#            引擎列表 -> 掌机模式彻底没有中文(桌面模式用物理键盘不受影响)。
+#            注意:配置文件里的 DisabledAddons= 走"配置"通道,不生效;
+#            日志里 "Override Disabled Addons: {}" 才是命令行 --disable/--enable 通道。
+ExecStart=%h/.local/bin/fcitx5 --replace --keep --disable=ibusfrontend
+
+Environment=LD_LIBRARY_PATH=%h/.local/share/fcitx5-host/lib:%h/.local/share/fcitx5-host/lib/private
+Environment=FCITX_ADDON_DIRS=%h/.local/share/fcitx5-host/lib/fcitx5
+Environment=LIBIME_MODEL_DIRS=%h/.local/share/fcitx5-host/share/libime:%h/.local/share/fcitx5-host/lib/libime
+# 保留系统的 XDG_DATA_DIRS,不然守护进程就看不见 /usr/share 下的东西
+# (图标、字体缓存、输入法定义等)。注意**不要**把 flatpak 的导出目录加进来 ——
+# 那里面是 fcitx5 5.1.23 的 addon 定义,和这里的 5.1.14 版本要求对不上,
+# 混用会触发 "addon dependency not satisfied"。
+Environment=XDG_DATA_DIRS=%h/.local/share/fcitx5-host/share:/usr/local/share:/usr/share
+Environment=GTK_IM_MODULE=fcitx
+Environment=QT_IM_MODULE=fcitx
+Environment=XMODIFIERS=@im=fcitx
+Environment=SDL_IM_MODULE=fcitx
+Environment=INPUT_METHOD=fcitx
+
+# daemon 用 execvp() 按名字拉辅助程序(托盘菜单点「配置」时会 exec
+# "fcitx5-configtool")。execvp 只认 PATH,而我们的 fcitx5 在 ~/.local/ 下,
+# 不显式给 PATH 就会 ENOENT —— 日志里表现为 "execvp: 没有那个文件或目录",
+# 点「配置」毫无反应。~/.local/bin 里是包装器,会自己设好库/插件路径。
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# 任何原因退出(崩溃 / 被杀 / 显示连接异常)都自动拉起
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+Slice=app.slice
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,21 @@
+#!/bin/sh
+# fcitx5 守护进程包装器
+#
+# 真正的二进制在 ~/.local/share/fcitx5-host/bin/fcitx5(用户态,A/B 免疫)。
+# 这里只负责把「库 / addon / 词典」的位置指到用户态目录。
+#
+# 关键环境变量:
+#   LD_LIBRARY_PATH     —— fcitx 的库不在 /usr,得自己指
+#   FCITX_ADDON_DIRS   —— addon .so 的位置(默认为编译期的 /usr/lib/fcitx5)
+#   LIBIME_MODEL_DIRS   —— 拼音语言模型(.lm)
+#   XDG_DATA_DIRS       —— addon 描述文件 / 输入法定义 / 词典的搜索根
+
+HOST="$HOME/.local/share/fcitx5-host"
+
+LD_LIBRARY_PATH="$HOST/lib:$HOST/lib/private${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+FCITX_ADDON_DIRS="$HOST/lib/fcitx5"
+LIBIME_MODEL_DIRS="$HOST/share/libime:$HOST/lib/libime"
+XDG_DATA_DIRS="$HOST/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export LD_LIBRARY_PATH FCITX_ADDON_DIRS LIBIME_MODEL_DIRS XDG_DATA_DIRS
+
+exec "$HOST/bin/fcitx5" "$@"

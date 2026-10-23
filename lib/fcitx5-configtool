@@ -1,0 +1,33 @@
+#!/bin/sh
+# fcitx5 配置工具包装器
+#
+# 为什么需要它:
+#   daemon 在托盘菜单里点「配置」时,是用 fcitx::startProcess() → execvp()
+#   按**名字**去找 "fcitx5-configtool" 的。execvp 只认 PATH。
+#   而我们的 fcitx5 装在 ~/.local/share/fcitx5-host/,不在任何 PATH 目录里,
+#   所以 execvp 会 ENOENT(日志里表现为 "execvp: 没有那个文件或目录"),
+#   点「配置」毫无反应。
+#
+#   这个包装器就是给 PATH 用的入口:自身设好库路径和插件路径,再 exec 真程序。
+#
+# 注意 daemon 的 execvp 会继承 daemon 的环境,PATH 里必须有 ~/.local/bin ——
+#   那由 ~/.config/systemd/user/fcitx5.service 的 Environment=PATH= 保证。
+HOST="$HOME/.local/share/fcitx5-host"
+
+export LD_LIBRARY_PATH="$HOST/exposed:$HOST/lib:$HOST/lib/private${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="$HOST/lib/qt6/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+export XDG_DATA_DIRS="$HOST/share:/usr/local/share:/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export PATH="$HOST/bin:$HOME/.local/bin:$PATH"
+
+# 优先用独立的 Qt6 配置界面(fcitx5-config-qt)。
+# 上游的 fcitx5-configtool 是个 shell 脚本,在 KDE 下会先试
+# `systemsettings kcm_fcitx5`,那个 KCM 插件虽然在 host 里,
+# 但 systemsettings 是系统程序,加载我们自带的 Qt 插件有兼容风险;
+# 而且它还会 fallback 到「用文本编辑器打开配置文件」。
+# 直接走 config-qt 更稳、更快。
+if [ -x "$HOST/bin/fcitx5-config-qt" ]; then
+    exec "$HOST/bin/fcitx5-config-qt" "$@"
+fi
+
+# 退路:官方那个脚本(它至少会打开 ~/.config/fcitx5 目录)
+exec "$HOST/bin/fcitx5-configtool" "$@"
