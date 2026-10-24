@@ -171,9 +171,62 @@ else
 fi
 
 # ===========================================================================
+echo "═══ C. flatpak 应用(Chromium/Electron 在 X11 下走 GTK IM 模块)═══"
+# ===========================================================================
+#  ★ 2026-10-24:Chromium 已经没有 XIM 了(XMODIFIERS/XOpenIM 计数为 0),
+#    X11 下只走 GTK3 的 IM 模块。而本仓库为了免 sudo 装 fcitx5,导出了
+#    GTK_IM_MODULE_FILE=~/.local/share/fcitx5-host/...  ← 这个路径在沙箱里不存在
+#    → 沙箱里的 GTK3 读不到 cache → flatpak 应用一点输入法都没有。
+#    判据:fcitx5-diagnose 里 flatpak 应用应出现 frontend:dbus(或 wayland)。
+echo
+if ! command -v flatpak >/dev/null 2>&1; then
+    say "flatpak" "没装,跳过"
+else
+    RUNTIME_CACHE="/usr/lib/x86_64-linux-gnu/gtk-3.0/3.0.0/immodules.cache"
+
+    # 宿主的 GTK_IM_MODULE_FILE 必须指向宿主自己那份(改了会弄坏宿主 GTK 应用)
+    HOST_CACHE="$(grep -rhoE 'GTK_IM_MODULE_FILE=.*' \
+        "$HOME/.config/environment.d" "$HOME/.config/plasma-workspace/env" 2>/dev/null \
+        | head -1 | cut -d= -f2-)"
+    if [ -n "$HOST_CACHE" ] && [ -e "$HOST_CACHE" ]; then
+        chk "宿主 GTK_IM_MODULE_FILE 指向存在的文件" ok
+        say "路径" "$HOST_CACHE"
+    else
+        chk "宿主 GTK_IM_MODULE_FILE 指向存在的文件" bad
+        say "路径" "${HOST_CACHE:-<没设>}"
+    fi
+
+    # 沙箱里的必须指向 runtime 自带的那份
+    G=$(flatpak override --user --show 2>/dev/null | grep '^GTK_IM_MODULE_FILE=' | cut -d= -f2-)
+    if [ "$G" = "$RUNTIME_CACHE" ]; then
+        chk "沙箱 GTK_IM_MODULE_FILE 指向 runtime cache" ok
+    else
+        chk "沙箱 GTK_IM_MODULE_FILE 指向 runtime cache" bad
+        say "当前" "${G:-<没设>}"
+        say "" "→ flatpak 应用(QQ/Chrome/WeChat)会没有输入法"
+        say "" "→ 修法:./scripts/fix-flatpak-ime.sh --apply"
+    fi
+
+    # 已安装的 flatpak 应用里,哪些在 fcitx5 里有输入上下文
+    DIAG="$HOME/.local/share/fcitx5-host/bin/fcitx5-diagnose"
+    [ -x "$DIAG" ] || DIAG="$(command -v fcitx5-diagnose 2>/dev/null)"
+    if [ -n "$DIAG" ] && [ -x "$DIAG" ]; then
+        n_flatpak_fb=$("$DIAG" 2>/dev/null | grep -oE 'frontend:(dbus|wayland|xim)' | wc -l)
+        if [ "$n_flatpak_fb" -gt 0 ]; then
+            chk "fcitx5 里有输入上下文" ok
+            "$DIAG" 2>/dev/null | grep -E '^\s+IC ' | \
+                sed -E 's/.*program:([^ ]*) frontend:([a-z]+).*/\1 → \2/' | sort -u | \
+                while read -r app fe; do say "$app" "$fe"; done
+        else
+            chk "fcitx5 里有输入上下文" bad
+        fi
+    fi
+fi
+
+# ===========================================================================
 if [ "${1:-}" = "--probe" ]; then
     echo
-    echo "═══ C. Steam 客户端内部真实调用(最准)═══"
+    echo "═══ D. Steam 客户端内部真实调用(最准)═══"
     if command -v node >/dev/null 2>&1; then
         node "$(dirname "$0")/verify-steam-osk.mjs" 2>&1 | sed 's/^/  /'
     else

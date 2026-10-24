@@ -3,7 +3,7 @@
 > 桌面模式(Plasma / KWin Wayland)和掌机模式(游戏会话 / Steam OSK)的中文输入,
 > 两条完全独立的链路,各有各的坑。这个仓库把两边的修法、诊断脚本和踩坑记录整理在一起。
 
-[![tag](https://img.shields.io/badge/tag-v1.0.0-blue)](./)
+[![tag](https://img.shields.io/badge/tag-v1.1.0-blue)](./)
 [![license](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 ---
@@ -18,6 +18,41 @@
 | 一键安装 | `install/install-desktop-ime.sh` | `install/install-gaming-ime.sh` |
 
 **两边的修法互不干扰,可以同时装。**
+
+---
+
+## ★ 第三个坑:flatpak 应用(QQ / Chrome / WeChat)打不出中文(v1.1.0)
+
+宿主上的应用一切正常,但 **flatpak 沙箱里的 Chromium/Electron 应用**打不出中文 ——
+这是本仓库自己的副作用,已修。
+
+**根因**:当代 Chromium 在 X11 下**已经没有 XIM 了**(二进制里 `XMODIFIERS`/`XOpenIM`
+计数全是 0),只剩 **GTK3 的 IM 模块**这条路。而本仓库为了免 sudo 把 fcitx5 装在
+`~/.local/share/fcitx5-host/`,不得不导出:
+
+```sh
+GTK_IM_MODULE_FILE=/home/deck/.local/share/fcitx5-host/share/gtk-3.0/immodules.cache
+```
+
+这个变量**会原样传进 flatpak 沙箱**,但该路径在沙箱里**不存在**
+→ 沙箱里的 GTK3 读不到 cache → 加载不到 `im-fcitx5.so` → 完全没有输入法。
+
+**修法**:把沙箱里的 `GTK_IM_MODULE_FILE` 改指到**各 runtime 自带**的 cache:
+
+```bash
+./scripts/fix-flatpak-ime.sh --apply
+```
+
+诊断金标准 —— `fcitx5-diagnose` 的 `frontend:` 字段直接告诉你走的哪条链:
+
+| `frontend:` | 含义 |
+|---|---|
+| `xim` | X11 XIM(Chromium 已不走这条) |
+| `dbus` | GTK IM 模块 ← **flatpak 应用在 X11 下应该走这条** |
+| `wayland` | 原生 Wayland 协议(`zwp_text_input_v3`) |
+
+应用**压根不出现**在列表里 = 那条链没建起来。
+完整分析见 [docs/flatpak-apps.md](docs/flatpak-apps.md)。
 
 ---
 
@@ -207,8 +242,9 @@ steamdeck-chinese-ime/
 │   ├── install-desktop-ime.sh    # 桌面模式一键安装
 │   └── install-gaming-ime.sh     # 掌机模式一键安装(核心: dconf profile)
 ├── scripts/
-│   ├── check-ime.sh              # 双模式自检
+│   ├── check-ime.sh              # 双模式自检(+ flatpak 应用检查)
 │   ├── verify-steam-osk.mjs      # Steam OSK 端到端验证(CEF DevTools)
+│   ├── fix-flatpak-ime.sh        # flatpak 应用(QQ/Chrome/WeChat)输入法修复
 │   └── ensure-ibus-dconf-profile.sh   # profile 文件自愈脚本
 ├── systemd/
 │   ├── fcitx5.service                        # 桌面模式 daemon(--replace --keep --disable=ibusfrontend)
@@ -223,6 +259,7 @@ steamdeck-chinese-ime/
 └── docs/
     ├── desktop-mode.md            # 桌面模式详解 + 坑
     ├── gaming-mode.md             # 掌机模式详解 + 坑
+    ├── flatpak-apps.md            # flatpak 应用(Chromium/Electron)输入法详解
     └── troubleshooting.md         # 症状 → 原因 → 修法 对照表
 ```
 
@@ -241,6 +278,13 @@ A:Steam 客户端的引擎表**只在 connected 回调里刷新一次**,启动�
 **Q:打完中文候选提交不了 / 游戏里收不到?**
 A:`gamescope` 的输入注入走私有协议 `gamescope_input_method`,
 和 OSK 的 commit 是两段路。详见 [docs/gaming-mode.md](docs/gaming-mode.md)。
+
+**Q:flatpak 里的 QQ / Chrome / WeChat 打不出中文,宿主应用却正常?**
+A:本仓库导出的 `GTK_IM_MODULE_FILE` 指向 `~/.local/share/fcitx5-host/`,
+这个路径在 flatpak 沙箱里不存在 → 沙箱里的 GTK3 加载不到 fcitx5 模块。
+而 Chromium 在 X11 下**只走 GTK IM 模块**(XIM 已被移除)。
+跑 `./scripts/fix-flatpak-ime.sh --apply`,然后重启应用。
+详见 [docs/flatpak-apps.md](docs/flatpak-apps.md)。
 
 **Q:A/B 系统更新后会不会又坏了?**
 A:本仓库所有东西都在 `/home` 下,A/B 更新只换系统镜像,碰不到。
@@ -271,6 +315,21 @@ which use two completely independent stacks:
   with no Chinese candidates, on the on-screen keyboard and the physical keyboard alike.
   The fix is to place the same profile file under a user-writable `XDG_DATA_DIRS` entry
   (inside `/home`, so it survives A/B updates), plus a systemd guard that recreates it.
+
+- **flatpak applications** (QQ / Chrome / WeChat, anything Chromium- or Electron-based):
+  contemporary Chromium has **no XIM at all** on X11 (`XMODIFIERS` / `XOpenIM` do not even
+  appear in the binary) — the only remaining X11 path is the **GTK3 IM module**
+  (`im-fcitx5.so` → `org.freedesktop.portal.Fcitx` → fcitx5). Because this repository
+  installs fcitx5 into `~/.local/share/fcitx5-host/`, it has to export
+  `GTK_IM_MODULE_FILE=$HOME/.local/share/fcitx5-host/share/gtk-3.0/immodules.cache`,
+  and that variable is passed verbatim **into the flatpak sandbox where the path does not
+  exist** → the sandboxed GTK3 cannot load the fcitx5 module at all → no input method.
+  Fix: point the sandbox at the cache that each **runtime ships**
+  (`/usr/lib/x86_64-linux-gnu/gtk-3.0/3.0.0/immodules.cache`) via
+  `flatpak override --user --env=GTK_IM_MODULE_FILE=...`. `scripts/fix-flatpak-ime.sh`
+  does it. Quick diagnostic: the `frontend:` field in `fcitx5-diagnose`
+  (`xim` / `dbus` / `wayland`) tells you which chain an application is on — if the
+  application is missing from the list entirely, that chain was never established.
 
 `install/` contains one-shot installers, `scripts/check-ime.sh` diagnoses both modes,
 and `scripts/verify-steam-osk.mjs` verifies the OSK path end-to-end from inside the

@@ -37,6 +37,10 @@
 | `fcitx5-remote -n` 返回 `keyboard-us` | 它报的是"当前持有焦点的输入上下文"用的 IM,终端里没有焦点窗口 | 看 `FullInputMethodGroupInfo Default` 的第二项 |
 | systemd 日志刷 `Job fcitx5.service/start deleted to break ordering cycle` | drop-in 里的 `After=fcitx5.service` 和 `fcitx5.service` 自己的 `After=graphical-session.target` 形成环 | drop-in 里改用 `Wants=`(竞态交给 launcher 包装器轮询解决) |
 | 桌面崩了 / 桌面起不来 | 有人单独 restart 了 `plasma-kwin_wayland` | **千万别单独 restart 它**。kwin 的启动参数改了也只能靠注销重登 |
+| **flatpak 应用(QQ/Chrome/WeChat)打不出中文,但宿主应用正常** | **宿主导出的 `GTK_IM_MODULE_FILE` 指向 `~/.local/share/fcitx5-host/…`,该路径在沙箱里不存在** → 沙箱里的 GTK3 读不到 cache → 加载不到 `im-fcitx5.so`。Chromium 在 X11 下**已经不用 XIM 了**,只剩 GTK IM 模块这一条路 | `./scripts/fix-flatpak-ime.sh --apply`,然后**重启应用**。详见 [flatpak-apps.md](flatpak-apps.md) |
+| flatpak 应用打不出中文,`fcitx5-diagnose` 里**压根没有这个应用** | 同上 —— 那条链没建起来 | 同上。诊断金标准:`fcitx5-diagnose` 的 `frontend:` 字段(`xim` / `dbus` / `wayland`) |
+| 沙箱里 `org.fcitx.Fcitx5` 连不上 | flatpak 的 dbus-proxy 不放行这个名字 | **不用管**。runtime 的 `libFcitx5GClient` 走 `org.freedesktop.portal.Fcitx` 门户,那条路本来就通 |
+| 给 flatpak 应用设了 `XMODIFIERS=@im=fcitx` 还是没用 | 当代 Chromium 里 `XMODIFIERS` 字符串**根本不存在**(XIM 已移除) | 走 GTK IM 模块那条路,见上 |
 
 ---
 
@@ -74,6 +78,14 @@ DCONF_PROFILE=ibus dconf write /desktop/ibus/engine/pinyin/__probe__ true \
 
 # ibus 引擎有没有被加载
 pgrep -a -f 'ibus-engine-(pinyin|bopomofo|table)'
+
+# ★ flatpak 应用的输入法上下文(看 frontend: 字段分辨走的哪条链)
+#   xim = X11 XIM(Chromium 已不走) / dbus = GTK IM 模块 / wayland = 原生 Wayland 协议
+~/.local/share/fcitx5-host/bin/fcitx5-diagnose | grep -E '^\s+IC '
+
+# 沙箱里 GTK3 能不能找到 fcitx5 模块
+flatpak run --command=sh com.qq.QQ -c \
+  'cat ${GTK_IM_MODULE_FILE:-/usr/lib/x86_64-linux-gnu/gtk-3.0/3.0.0/immodules.cache} | grep -c fcitx'
 
 # Steam OSK 端到端
 node scripts/verify-steam-osk.mjs

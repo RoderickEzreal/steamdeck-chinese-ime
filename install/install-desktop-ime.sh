@@ -53,7 +53,7 @@ warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- 0. 前置检查
-say "0/7 前置检查"
+say "0/8 前置检查"
 [ "$(uname -s)" = "Linux" ] || die "只支持 Linux"
 if [ ! -d "$HOST_DIR" ] || [ "$REINSTALL" = "1" ]; then
     say "   构建 fcitx5 宿主安装(从 SteamOS 官方源解包,不碰 /usr)"
@@ -64,7 +64,7 @@ fi
 [ -x "$HOST_DIR/bin/fcitx5" ] || die "宿主安装不完整"
 
 # ---------------------------------------------------------------- 1. 包装器
-say "1/7 安装包装器到 ~/.local/bin"
+say "1/8 安装包装器到 ~/.local/bin"
 mkdir -p "$BIN_DIR"
 for f in fcitx5 fcitx5-remote fcitx5-diagnose fcitx5-start fcitx5-wayland-launcher \
          fcitx5-dbus-activate fcitx5-configtool fcitx5-ensure-installed; do
@@ -73,7 +73,7 @@ done
 ok "8 个包装器就位(它们负责把库/addon/词典路径指到 ~/.local/share/fcitx5-host)"
 
 # ---------------------------------------------------------------- 2. fcitx5 配置
-say "2/7 安装 fcitx5 配置(~/.config/fcitx5)"
+say "2/8 安装 fcitx5 配置(~/.config/fcitx5)"
 mkdir -p "$HOME/.config/fcitx5"
 install -m 0644 "$REPO_DIR/config/fcitx5-config" "$HOME/.config/fcitx5/config"
 install -m 0644 "$REPO_DIR/config/fcitx5-profile" "$HOME/.config/fcitx5/profile"
@@ -81,13 +81,13 @@ ok "config + profile 就位"
 warn "改 profile 必须在 daemon **停止**时进行:daemon 退出时用内存里的分组覆写 profile"
 
 # ---------------------------------------------------------------- 3. systemd 单元
-say "3/7 安装 systemd 用户单元"
+say "3/8 安装 systemd 用户单元"
 mkdir -p "$UNIT_DIR"
 install -m 0644 "$REPO_DIR/systemd/fcitx5.service" "$UNIT_DIR/fcitx5.service"
 ok "fcitx5.service(Restart=always + --replace --keep --disable=ibusfrontend)"
 
 # ---------------------------------------------------------------- 4. KWin 桥接
-say "4/7 安装 KWin 的 --inputmethod= 桥接"
+say "4/8 安装 KWin 的 --inputmethod= 桥接"
 mkdir -p "$UNIT_DIR/plasma-kwin_wayland.service.d"
 install -m 0644 "$REPO_DIR/systemd/plasma-kwin_wayland.inputmethod.conf" \
               "$UNIT_DIR/plasma-kwin_wayland.service.d/inputmethod.conf"
@@ -122,8 +122,25 @@ sed -i '/^InputMethod\\x5b\$e\\x5d=/d' "$KWINRC"
 printf 'InputMethod\\x5b$e\\x5d=%s\n' "$LAUNCHER_DESKTOP" >> "$KWINRC"
 ok "drop-in + desktop 文件 + kwinrc 条目就位"
 
-# ---------------------------------------------------------------- 5. D-Bus 激活
-say "5/7 安装 D-Bus 激活文件"
+# ---------------------------------------------------------------- 5. flatpak 应用
+say "5/8 修 flatpak 应用的输入法(Chromium/Electron 在 X11 下走 GTK IM 模块)"
+# ★ 2026-10-24:本仓库把 fcitx5 装在 ~/.local/share/fcitx5-host/,必须导出
+#   GTK_IM_MODULE_FILE=~/.local/share/fcitx5-host/share/gtk-3.0/immodules.cache
+#   给宿主上的 GTK3 用。但这个变量会**原样传进 flatpak 沙箱**,而该路径在沙箱里
+#   不存在 → 沙箱里的 GTK3 读不到 cache → 加载不到 im-fcitx5.so → 没有输入法。
+#   而当代 Chromium 在 X11 下**已经没有 XIM 了**,只剩 GTK IM 模块这一条路。
+#   修法:把沙箱里的 GTK_IM_MODULE_FILE 改指 runtime 自带的 cache。
+if command -v flatpak >/dev/null 2>&1; then
+    "$REPO_DIR/scripts/fix-flatpak-ime.sh" --apply >/dev/null 2>&1 \
+        && ok "flatpak override 已更新(QQ / Chrome / WeChat 等)" \
+        || warn "flatpak override 没改成,手动跑 scripts/fix-flatpak-ime.sh --apply"
+    warn "**必须重启 flatpak 应用**才生效(环境变量是启动时注入的)"
+else
+    warn "没装 flatpak,跳过"
+fi
+
+# ---------------------------------------------------------------- 6. D-Bus 激活
+say "6/8 安装 D-Bus 激活文件"
 mkdir -p "$HOME/.local/share/dbus-1/services"
 cat > "$HOME/.local/share/dbus-1/services/org.fcitx.Fcitx5.service" <<EOF
 [D-BUS Service]
@@ -133,7 +150,7 @@ EOF
 ok "org.fcitx.Fcitx5.service(优先级高于 flatpak 导出的那份,避免拉起 flatpak 版)"
 
 # ---------------------------------------------------------------- 6. 启用
-say "6/7 启用并重启"
+say "7/8 启用并重启"
 systemctl --user daemon-reload
 systemctl --user enable fcitx5.service >/dev/null 2>&1 || true
 systemctl --user restart fcitx5.service
@@ -152,7 +169,7 @@ fi
 ok "fcitx5.service active"
 
 # ---------------------------------------------------------------- 7. 收尾
-say "7/7 收尾"
+say "8/8 收尾"
 if journalctl --user -u fcitx5.service --since "-2 min" --no-pager 2>/dev/null \
    | grep -q "Override Disabled Addons: {ibusfrontend}"; then
     ok "ibusfrontend 已被禁用(命令行通道生效)"
